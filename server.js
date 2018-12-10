@@ -3,6 +3,9 @@ const app = express();
 const http = require('http').createServer(app);
 // const PORT = process.env.PORT || 7000;
 
+const cluster = require('cluster');
+const numCPUs = require('os').cpus().length;
+
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
@@ -10,9 +13,15 @@ const io = require('socket.io').listen(http, {
   // Connection: 'keep-alive',
   transports: ['websocket', 'polling']
 });
+
+const redis = require('redis');
 const redisAdapter = require('socket.io-redis');
 
 const sticky = require('sticky-session');
+
+const pub = redis.createClient();
+const sub = redis.createClient();
+const store = redis.createClient();
 
 const {
   writeMessage,
@@ -20,6 +29,11 @@ const {
   deleteHashKey
 } = require('./redis/modules');
 
+if (cluster.isMaster) {
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+}
 if (!sticky.listen(http, 7000)) {
   http.once('listening', function() {
     console.log('server started on 7000 port');
@@ -33,10 +47,19 @@ if (!sticky.listen(http, 7000)) {
 
   io.adapter(redisAdapter({ host: 'localhost', port: 6379 }));
 
+  sub.on('message', (channel, data) => {
+    data = JSON.parse(data);
+    console.log('Redis Sub :::::: ' + channel);
+  });
+
   io.on('connection', socket => {
     io.clients((error, clients) => {
       if (error) throw err;
       console.log('Clients :::::: ', clients);
+    });
+
+    sub.on('subscribe', (channel, count) => {
+      console.log('Subscribe to :::: ' + channel + 'count is :::::: ', count);
     });
 
     // join chatting room
@@ -48,23 +71,29 @@ if (!sticky.listen(http, 7000)) {
       myPosition.latitude = data.position.latitude;
       myPosition.timestamp = data.position.timestamp;
       myPosition.userId = data.userId;
-
+      const position = JSON.stringify(myPosition);
       socket.userInfo = { roomCode: data.roomCode, userId: data.userId };
+      const info = JSON.stringify(socket.userInfo);
 
-      socket.join(data.roomCode, () => {
-        console.log(`${data.userId} is join in ${data.roomCode}`);
-        writePosition(myPosition, data.roomCode, data.userId);
-        socket.broadcast
-          .to(data.roomCode)
-          .emit('joinRoom', { userId: data.userId, position: data.position });
-      });
+      sub.subscribe(data.roomCode);
+      socket.join(data.roomCode);
+      writePosition(myPosition, data.roomCode, data.userId);
+      pub.publish(data.roomCode, info);
+
+      // socket.join(data.roomCode, () => {
+      //   console.log(`${data.userId} is join in ${data.roomCode}`);
+      //   writePosition(myPosition, data.roomCode, data.userId);
+      //   socket.broadcast
+      //     .to(data.roomCode)
+      //     .emit('joinRoom', { userId: data.userId, position: position });
+      // });
     });
 
     // leave chatting room
     socket.on('leave', function(data) {
       socket.leave(data.roomCode, () => {
         socket.disconnect();
-        console.log('Leave :::::: ', data.userId);
+        console.log('Leave :::::: ', data);
 
         deleteHashKey(data.roomCode, data.userId);
       });
@@ -74,7 +103,8 @@ if (!sticky.listen(http, 7000)) {
       let userInfo = socket.userInfo;
       console.log('Disconnect :::::: ', userInfo);
 
-      io.to(userInfo.roomCode).emit('leaveRoom', userInfo.userId);
+      sub.quit();
+      pub.publish('User Disconnect :::::: ', socket.id);
     });
 
     // send message to selected room members
@@ -93,8 +123,10 @@ if (!sticky.listen(http, 7000)) {
 
       // save chatting history in Redis, hash key 'chatting'
       writeMessage(data.message, 'chatting_History', data.roomCode);
+      const message = JSON.stringify(data.message);
+      pub.publish(data.roomCode, message);
 
-      socket.broadcast.to(data.roomCode).emit('message', data.message);
+      // socket.broadcast.to(data.roomCode).emit('message', data.message);
     });
 
     // send my position to others
@@ -120,7 +152,10 @@ if (!sticky.listen(http, 7000)) {
       userPosition.userId = data.position.userId;
       writePosition(userPosition, data.roomCode, data.position.userId);
 
-      socket.broadcast.to(data.roomCode).emit('otherPosition', userPosition);
+      const position = JSON.stringify(userPosition);
+      pub.publish(data.roomCode, position);
+
+      // socket.broadcast.to(data.roomCode).emit('otherPosition', userPosition);
     });
   });
 
