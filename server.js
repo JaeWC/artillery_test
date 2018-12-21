@@ -20,7 +20,7 @@ const sticky = require('sticky-session');
 
 const pub = redis.createClient();
 const sub = redis.createClient();
-const store = redis.createClient();
+sub.subscribe('chat');
 
 const {
   writeMessage,
@@ -29,12 +29,10 @@ const {
 } = require('./redis/modules');
 
 if (cluster.isMaster) {
-  // CPU의 갯수만큼 워커 생성
+  console.log(os.cpus().length);
   os.cpus().forEach(cpu => cluster.fork());
-  // 워쿼가 죽으면
   cluster.on('exit', (worker, code, signal) => {
     if (code === 200) {
-      // 워커를 살리고 살리고 ~
       cluster.fork();
     }
   });
@@ -53,9 +51,9 @@ if (!sticky.listen(http, 7000)) {
 
   io.adapter(redisAdapter({ host: 'localhost', port: 6379 }));
 
-  sub.on('message', (channel, data) => {
+  sub.on('chat', (channel, data) => {
     data = JSON.parse(data);
-    console.log('Redis Sub :::::: ' + channel);
+    console.log('Redis Sub :::::: ' + channel + ' ' + data);
   });
 
   io.on('connection', socket => {
@@ -77,14 +75,17 @@ if (!sticky.listen(http, 7000)) {
       myPosition.latitude = data.position.latitude;
       myPosition.timestamp = data.position.timestamp;
       myPosition.userId = data.userId;
-      const position = JSON.stringify(myPosition);
+
       socket.userInfo = { roomCode: data.roomCode, userId: data.userId };
       const info = JSON.stringify(socket.userInfo);
 
-      sub.subscribe(data.roomCode);
+      // sub.subscribe(data.roomCode);
       socket.join(data.roomCode);
       writePosition(myPosition, data.roomCode, data.userId);
       pub.publish(data.roomCode, info);
+      socket.broadcast
+        .to(data.roomCode)
+        .emit('joinRoom', { userId: data.userId, position: myPosition });
 
       // socket.join(data.roomCode, () => {
       //   console.log(`${data.userId} is join in ${data.roomCode}`);
@@ -100,6 +101,9 @@ if (!sticky.listen(http, 7000)) {
       socket.leave(data.roomCode, () => {
         socket.disconnect();
         console.log('Leave :::::: ', data);
+
+        sub.quit();
+        pub.publish('User Leave :::::: ', data.userId);
 
         deleteHashKey(data.roomCode, data.userId);
       });
@@ -186,13 +190,6 @@ if (!sticky.listen(http, 7000)) {
     writeMessage(data.message, 'chatting_History', data.roomCode);
 
     res.json('success');
-  });
-
-  //error router
-  app.use((req, res, next) => {
-    const err = new Error('Not Found');
-    err.status = 404;
-    next(err);
   });
 
   // http.listen(PORT, () => console.log(`Server running on port ${PORT}`));
