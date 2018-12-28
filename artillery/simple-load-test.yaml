@@ -1,0 +1,424 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 500
+      arrivalRate: 5
+  socketio:
+    extraHeaders:
+      polling:
+        x-clientid: abc
+  processor: './function.js'
+
+scenarios:
+  - name: "Case 1: Sending Position without talk"
+    weight: 16
+    engine: "socketio"
+    flow:
+      - function: "setPosition"
+      - emit:
+          channel: "join"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 40
+      - loop:
+          - post:
+              url: "/redis/position"
+              json: {
+                position: {
+                  longitude: '{{ longitude }}',
+                  latitude: '{{ latitude }}',
+                },
+                timestamp: '{{ timeStamp }}',
+                userId: '{{ userId }}',
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 120
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 40
+      - think: 10
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+  - name: 'case 2: Sending position with Occasional Talk'
+    weight: 32
+    engine: 'socketio'
+    flow:
+      - function: 'setPosition'
+      - emit:
+          channel: 'join'
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 40
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - post:
+              url: "/redis/position"
+              json: {
+                position: {
+                  longitude: '{{ longitude }}',
+                  latitude: '{{ latitude }}',
+                },
+                timestamp: '{{ timeStamp }}',
+                userId: '{{ userId }}',
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 120
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 40
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - think: 10
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+  - name: 'case 3: Sending position with Continuous Talk'
+    weight: 32
+    engine: 'socketio'
+    flow:
+      - function: 'setPosition'
+      - emit:
+          channel: 'join'
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 5
+          - emit:
+              channel: 'message'
+              data: {
+                roomCode: '{{ roomCode }}',
+                message: {
+                  _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+                  }
+              }
+          - think: 5
+        count: 40
+      - loop:
+          - post:
+              url: "/redis/position"
+              json: {
+                position: {
+                  longitude: '{{ longitude }}',
+                  latitude: '{{ latitude }}',
+                },
+                timestamp: '{{ timeStamp }}',
+                userId: '{{ userId }}',
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 120
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 5
+          - emit:
+              channel: 'message'
+              data: {
+                roomCode: '{{ roomCode }}',
+                message: {
+                  _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+                  }
+              }
+          - think: 5
+        count: 40
+      - think: 10
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+  # Always Fore-Ground : 20% (case 4 & case 5 & case 6)
+  - name: 'Case 4: Sending Position with Socket.io only'
+    weight: 4
+    engine: 'socketio'
+    flow:
+      - function: 'setPosition'
+      - emit:
+          channel: 'join'
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 200
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+      - think: 10
+  - name: 'case 5: Sending position with Socket.io and Occasional Talk'
+    weight: 8
+    engine: 'socketio'
+    flow:
+      - function: 'setPosition'
+      - emit:
+          channel: 'join'
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 100
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 10
+        count: 100
+      - emit:
+          channel: 'message'
+          data: {
+            roomCode: '{{ roomCode }}',
+            message: {
+              _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+              }
+          }
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+      - think: 10
+  - name: 'case 6: Sending position with Socket.io and Continuous Talk'
+    weight: 8
+    engine: 'socketio'
+    flow:
+      - function: 'setPosition'
+      - emit:
+          channel: 'join'
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}',
+            position: {
+              latitude: '{{ longitude }}', longitude: '{{ latitude }}', timestamp: '{{ timeStamp }}'
+              }
+          }
+      - loop:
+          - emit:
+              channel: 'position'
+              data: {
+                position: {
+                  coords: {
+                    longitude: '{{ longitude }}',
+                    latitude: '{{ latitude }}'
+                  },
+                  timestamp: '{{ timeStamp }}',
+                  userId: '{{ userId }}'
+                },
+                roomCode: '{{ roomCode }}'
+              }
+          - think: 5
+          - emit:
+              channel: 'message'
+              data: {
+                roomCode: '{{ roomCode }}',
+                message: {
+                  _id: '{{ $randomString() }}', text: '{{ text }}', user: { _id: '{{ userId }}', name: '{{ userId }}' }, createdAt: '{{ timeStamp }}'
+                  }
+              }
+          - think: 5
+        count: 200
+      - emit:
+          channel: "leave"
+          data: {
+            roomCode: '{{ roomCode }}',
+            userId: '{{ userId }}'
+          }
+      - think: 10
